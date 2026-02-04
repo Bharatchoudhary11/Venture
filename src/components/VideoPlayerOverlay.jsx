@@ -73,11 +73,28 @@ const IconSkipBackward = () => (
   </svg>
 )
 
+const formatTime = (seconds) => {
+  if (!Number.isFinite(seconds)) return '00:00'
+  const totalSeconds = Math.max(0, Math.floor(seconds))
+  const mins = Math.floor(totalSeconds / 60)
+  const secs = totalSeconds % 60
+  return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`
+}
+
 export function VideoPlayerOverlay({ video, onClose }) {
-  const containerRef = useRef(null)
+  const ytContainerRef = useRef(null)
   const playerRef = useRef(null)
+  const htmlVideoRef = useRef(null)
+  const progressIntervalRef = useRef(null)
+
   const [isPlaying, setIsPlaying] = useState(true)
   const [playerReady, setPlayerReady] = useState(false)
+  const [currentTime, setCurrentTime] = useState(0)
+  const [duration, setDuration] = useState(0)
+
+  const isYouTube =
+    video.mediaType?.toUpperCase() === 'YOUTUBE' ||
+    /youtube\.com|youtu\.be/.test(video.mediaUrl ?? '')
   const videoId = useMemo(() => extractVideoId(video.mediaUrl || video.slug), [video.mediaUrl, video.slug])
 
   useEffect(() => {
@@ -89,20 +106,38 @@ export function VideoPlayerOverlay({ video, onClose }) {
   }, [onClose])
 
   useEffect(() => {
-    let isMounted = true
     setPlayerReady(false)
     setIsPlaying(true)
+    setCurrentTime(0)
+    setDuration(0)
+    if (progressIntervalRef.current) {
+      clearInterval(progressIntervalRef.current)
+      progressIntervalRef.current = null
+    }
+  }, [videoId, video.mediaUrl])
+
+  useEffect(() => {
+    if (!isYouTube) return
+    let isMounted = true
     loadYouTubeAPI()
       .then((YT) => {
-        if (!isMounted || !containerRef.current || !YT) return
-        playerRef.current = new YT.Player(containerRef.current, {
+        if (!isMounted || !ytContainerRef.current || !YT) return
+        playerRef.current = new YT.Player(ytContainerRef.current, {
           videoId,
           playerVars: { autoplay: 1, controls: 0, rel: 0, playsinline: 1 },
           events: {
             onReady: (event) => {
               if (!isMounted) return
+              setDuration(event.target.getDuration?.() ?? 0)
               setPlayerReady(true)
               event.target.playVideo()
+              progressIntervalRef.current = window.setInterval(() => {
+                if (!playerRef.current) return
+                const time = playerRef.current.getCurrentTime?.() ?? 0
+                setCurrentTime(time)
+                const total = playerRef.current.getDuration?.()
+                if (total) setDuration(total)
+              }, 500)
             },
             onStateChange: (event) => {
               if (!isMounted) return
@@ -120,30 +155,96 @@ export function VideoPlayerOverlay({ video, onClose }) {
 
     return () => {
       isMounted = false
+      if (progressIntervalRef.current) {
+        clearInterval(progressIntervalRef.current)
+        progressIntervalRef.current = null
+      }
       if (playerRef.current) {
         playerRef.current.destroy()
         playerRef.current = null
       }
     }
-  }, [videoId])
+  }, [isYouTube, videoId])
+
+  useEffect(() => {
+    if (isYouTube) return
+    const videoElement = htmlVideoRef.current
+    if (!videoElement) return
+
+    const handleLoaded = () => {
+      setDuration(videoElement.duration || 0)
+      setPlayerReady(true)
+      videoElement.play().catch(() => {})
+    }
+    const handleTime = () => setCurrentTime(videoElement.currentTime || 0)
+    const handlePlay = () => setIsPlaying(true)
+    const handlePause = () => setIsPlaying(false)
+    const handleEnded = () => setIsPlaying(false)
+
+    videoElement.addEventListener('loadedmetadata', handleLoaded)
+    videoElement.addEventListener('timeupdate', handleTime)
+    videoElement.addEventListener('play', handlePlay)
+    videoElement.addEventListener('pause', handlePause)
+    videoElement.addEventListener('ended', handleEnded)
+
+    videoElement.play().catch(() => {})
+
+    return () => {
+      videoElement.pause()
+      videoElement.removeEventListener('loadedmetadata', handleLoaded)
+      videoElement.removeEventListener('timeupdate', handleTime)
+      videoElement.removeEventListener('play', handlePlay)
+      videoElement.removeEventListener('pause', handlePause)
+      videoElement.removeEventListener('ended', handleEnded)
+    }
+  }, [isYouTube, video.mediaUrl])
 
   const togglePlay = () => {
-    const player = playerRef.current
-    if (!player || !window.YT) return
-    const state = player.getPlayerState()
-    if (state === window.YT.PlayerState.PLAYING) {
-      player.pauseVideo()
+    if (isYouTube) {
+      const player = playerRef.current
+      if (!player || !window.YT) return
+      const state = player.getPlayerState()
+      if (state === window.YT.PlayerState.PLAYING) {
+        player.pauseVideo()
+      } else {
+        player.playVideo()
+      }
+      return
+    }
+    const videoElement = htmlVideoRef.current
+    if (!videoElement) return
+    if (videoElement.paused) {
+      videoElement.play()
     } else {
-      player.playVideo()
+      videoElement.pause()
     }
   }
 
-  const seekBy = (seconds) => {
-    const player = playerRef.current
-    if (!player) return
-    const current = player.getCurrentTime?.() ?? 0
-    player.seekTo(Math.max(0, current + seconds), true)
+  const seekBy = (delta) => {
+    const nextTime = Math.min(Math.max((currentTime ?? 0) + delta, 0), duration || 0)
+    if (isYouTube) {
+      const player = playerRef.current
+      if (!player) return
+      player.seekTo(nextTime, true)
+    } else {
+      const videoElement = htmlVideoRef.current
+      if (!videoElement) return
+      videoElement.currentTime = nextTime
+    }
+    setCurrentTime(nextTime)
   }
+
+  const handleSeekChange = (event) => {
+    const next = Number(event.target.value)
+    if (!Number.isFinite(next)) return
+    if (isYouTube) {
+      playerRef.current?.seekTo(next, true)
+    } else if (htmlVideoRef.current) {
+      htmlVideoRef.current.currentTime = next
+    }
+    setCurrentTime(next)
+  }
+  const progressPercent = duration ? Math.min((currentTime / duration) * 100, 100) : 0
 
   return (
     <div className="player-overlay" role="dialog" aria-modal="true">
@@ -152,26 +253,66 @@ export function VideoPlayerOverlay({ video, onClose }) {
       </button>
       <div className="player-frame">
         <div className="iframe-shell">
-          <div ref={containerRef} className="yt-container" />
-          {!playerReady && <div className="player-loading">Loading player…</div>}
+          {isYouTube ? (
+            <>
+              <div ref={ytContainerRef} className="yt-container" />
+              {!playerReady && <div className="player-loading">Loading player…</div>}
+            </>
+          ) : (
+            <>
+              <video ref={htmlVideoRef} src={video.mediaUrl} playsInline />
+              {!playerReady && <div className="player-loading">Loading video…</div>}
+            </>
+          )}
+          <div className="player-ui">
+            <div className="player-progress compact">
+              <input
+                type="range"
+                min="0"
+                max={duration || 0}
+                step="0.1"
+                value={Number.isFinite(currentTime) ? currentTime : 0}
+                onChange={handleSeekChange}
+                disabled={!playerReady || !Number.isFinite(duration) || duration === 0}
+                aria-label="Seek"
+                style={{ '--progress': `${progressPercent}%` }}
+              />
+              <div className="timecodes">
+                <span>{formatTime(currentTime)}</span>
+                <span>{formatTime(duration)}</span>
+              </div>
+            </div>
+            <div className="player-controls compact">
+              <button
+                className="icon-button secondary"
+                onClick={() => seekBy(-10)}
+                aria-label="Skip backward 10 seconds"
+              >
+                <IconSkipBackward />
+                <span className="sr-only">Skip backward 10 seconds</span>
+              </button>
+              <button
+                className="icon-button primary"
+                onClick={togglePlay}
+                aria-label={isPlaying ? 'Pause video' : 'Play video'}
+              >
+                {isPlaying ? <IconPause /> : <IconPlay />}
+                <span className="sr-only">{isPlaying ? 'Pause video' : 'Play video'}</span>
+              </button>
+              <button
+                className="icon-button secondary"
+                onClick={() => seekBy(10)}
+                aria-label="Skip forward 10 seconds"
+              >
+                <IconSkipForward />
+                <span className="sr-only">Skip forward 10 seconds</span>
+              </button>
+            </div>
+          </div>
         </div>
         <div className="player-meta">
           <span className="category-chip">{video.categoryName}</span>
           <h2>{video.title}</h2>
-        </div>
-        <div className="player-controls">
-          <button className="icon-button" onClick={() => seekBy(-10)} aria-label="Skip backward 10 seconds">
-            <IconSkipBackward />
-            <span className="sr-only">Skip backward 10 seconds</span>
-          </button>
-          <button className="icon-button" onClick={togglePlay} aria-label={isPlaying ? 'Pause video' : 'Play video'}>
-            {isPlaying ? <IconPause /> : <IconPlay />}
-            <span className="sr-only">{isPlaying ? 'Pause video' : 'Play video'}</span>
-          </button>
-          <button className="icon-button" onClick={() => seekBy(10)} aria-label="Skip forward 10 seconds">
-            <IconSkipForward />
-            <span className="sr-only">Skip forward 10 seconds</span>
-          </button>
         </div>
       </div>
     </div>
@@ -184,6 +325,7 @@ VideoPlayerOverlay.propTypes = {
     mediaUrl: PropTypes.string.isRequired,
     categoryName: PropTypes.string.isRequired,
     slug: PropTypes.string,
+    mediaType: PropTypes.string,
   }).isRequired,
   onClose: PropTypes.func.isRequired,
 }
