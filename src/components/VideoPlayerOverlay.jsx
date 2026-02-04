@@ -1,6 +1,9 @@
 import PropTypes from 'prop-types'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
+const VIRTUAL_ITEM_HEIGHT = 84
+const VIRTUAL_BUFFER = 6
+
 let ytApiPromise
 const loadYouTubeAPI = () => {
   if (typeof window === 'undefined') return Promise.resolve(null)
@@ -125,6 +128,9 @@ export function VideoPlayerOverlay({ video, categories = [], onVideoSelect, onCl
   const dragStartRef = useRef(null)
   const dragOffsetRef = useRef(0)
   const dragAnimationRef = useRef(null)
+  const virtualListRef = useRef(null)
+  const virtualIndicesRef = useRef({ start: 0, end: 0 })
+  const autoPlayTimerRef = useRef(null)
 
   const [isPlaying, setIsPlaying] = useState(true)
   const [playerReady, setPlayerReady] = useState(false)
@@ -135,6 +141,7 @@ export function VideoPlayerOverlay({ video, categories = [], onVideoSelect, onCl
   const [isDragging, setIsDragging] = useState(false)
   const [dragOffset, setDragOffset] = useState(0)
   const [isFullscreen, setIsFullscreen] = useState(false)
+  const [countdown, setCountdown] = useState(null)
 
   const isYouTube =
     video.mediaType?.toUpperCase() === 'YOUTUBE' ||
@@ -264,6 +271,16 @@ export function VideoPlayerOverlay({ video, categories = [], onVideoSelect, onCl
       handleRelatedSelect(nextVideo)
     }
   }, [handleRelatedSelect, relatedVideos, video.id])
+  useEffect(() => {
+    if (countdown == null) return
+    if (countdown === 0) {
+      playNextInCategory()
+      setCountdown(null)
+      return
+    }
+    autoPlayTimerRef.current = setTimeout(() => setCountdown((value) => (value ?? 0) - 1), 1000)
+    return () => clearTimeout(autoPlayTimerRef.current)
+  }, [countdown, playNextInCategory])
 
   useEffect(() => {
     if (!isYouTube) return
@@ -293,11 +310,12 @@ export function VideoPlayerOverlay({ video, categories = [], onVideoSelect, onCl
               const { PlayerState } = window.YT
               if (event.data === PlayerState.PLAYING || event.data === PlayerState.BUFFERING) {
                 setIsPlaying(true)
+                setCountdown(null)
               } else if (event.data === PlayerState.PAUSED) {
                 setIsPlaying(false)
               } else if (event.data === PlayerState.ENDED) {
                 setIsPlaying(false)
-                playNextInCategory()
+                setCountdown(2)
               }
             },
           },
@@ -333,7 +351,7 @@ export function VideoPlayerOverlay({ video, categories = [], onVideoSelect, onCl
     const handlePause = () => setIsPlaying(false)
     const handleEnded = () => {
       setIsPlaying(false)
-      playNextInCategory()
+      setCountdown(2)
     }
 
     videoElement.addEventListener('loadedmetadata', handleLoaded)
@@ -387,12 +405,28 @@ export function VideoPlayerOverlay({ video, categories = [], onVideoSelect, onCl
     surface.addEventListener('touchstart', handleTouchStart, { passive: true })
     surface.addEventListener('touchmove', handleTouchMove, { passive: true })
 
+    const handleVirtualScroll = () => {
+      const container = virtualListRef.current
+      if (!container) return
+      const scrollTop = container.scrollTop
+      const visibleCount = Math.ceil(container.clientHeight / VIRTUAL_ITEM_HEIGHT)
+      const start = Math.max(0, Math.floor(scrollTop / VIRTUAL_ITEM_HEIGHT) - VIRTUAL_BUFFER)
+      const end = Math.min(relatedVideos.length, start + visibleCount + VIRTUAL_BUFFER * 2)
+      virtualIndicesRef.current = { start, end }
+      container.style.setProperty('--virtual-start', `${start * VIRTUAL_ITEM_HEIGHT}px`)
+      setRenderTick((tick) => tick + 1)
+    }
+
+    const relatedListEl = virtualListRef.current
+    relatedListEl?.addEventListener('scroll', handleVirtualScroll, { passive: true })
+
     return () => {
       surface.removeEventListener('wheel', handleWheel)
       surface.removeEventListener('touchstart', handleTouchStart)
       surface.removeEventListener('touchmove', handleTouchMove)
+      relatedListEl?.removeEventListener('scroll', handleVirtualScroll)
     }
-  }, [relatedOpen])
+  }, [relatedOpen, relatedVideos.length])
 
   useEffect(() => {
     if (pipMode) {
