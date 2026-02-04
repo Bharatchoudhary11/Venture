@@ -87,18 +87,41 @@ export function VideoPlayerOverlay({ video, categories = [], onVideoSelect, onCl
   const htmlVideoRef = useRef(null)
   const progressIntervalRef = useRef(null)
   const surfaceRef = useRef(null)
+  const frameRef = useRef(null)
   const touchStartRef = useRef(null)
+  const dragStartRef = useRef(null)
+  const dragOffsetRef = useRef(0)
+  const dragAnimationRef = useRef(null)
 
   const [isPlaying, setIsPlaying] = useState(true)
   const [playerReady, setPlayerReady] = useState(false)
   const [currentTime, setCurrentTime] = useState(0)
   const [duration, setDuration] = useState(0)
   const [relatedOpen, setRelatedOpen] = useState(false)
+  const [pipMode, setPipMode] = useState(false)
+  const [isDragging, setIsDragging] = useState(false)
+  const [dragOffset, setDragOffset] = useState(0)
 
   const isYouTube =
     video.mediaType?.toUpperCase() === 'YOUTUBE' ||
     /youtube\.com|youtu\.be/.test(video.mediaUrl ?? '')
   const videoId = useMemo(() => extractVideoId(video.mediaUrl || video.slug), [video.mediaUrl, video.slug])
+  const updateDragOffset = useCallback((value) => {
+    dragOffsetRef.current = value
+    if (dragAnimationRef.current) {
+      cancelAnimationFrame(dragAnimationRef.current)
+    }
+    dragAnimationRef.current = requestAnimationFrame(() => {
+      setDragOffset(value)
+      dragAnimationRef.current = null
+    })
+  }, [])
+
+  useEffect(() => {
+    return () => {
+      if (dragAnimationRef.current) cancelAnimationFrame(dragAnimationRef.current)
+    }
+  }, [])
 
   useEffect(() => {
     const handleKeyDown = (event) => {
@@ -117,7 +140,11 @@ export function VideoPlayerOverlay({ video, categories = [], onVideoSelect, onCl
       clearInterval(progressIntervalRef.current)
       progressIntervalRef.current = null
     }
-  }, [videoId, video.mediaUrl])
+    dragStartRef.current = null
+    setIsDragging(false)
+    setPipMode(false)
+    updateDragOffset(0)
+  }, [updateDragOffset, videoId, video.mediaUrl])
 
   const togglePlay = () => {
     if (isYouTube) {
@@ -325,13 +352,97 @@ export function VideoPlayerOverlay({ video, categories = [], onVideoSelect, onCl
     }
   }, [relatedOpen])
 
+  useEffect(() => {
+    if (pipMode) {
+      setRelatedOpen(false)
+    }
+  }, [pipMode])
+
+  useEffect(() => {
+    if (!isDragging) return
+    const handlePointerMove = (event) => {
+      if (dragStartRef.current == null) return
+      const delta = event.clientY - dragStartRef.current
+      if (!pipMode) {
+        updateDragOffset(Math.max(0, delta))
+      } else {
+        updateDragOffset(Math.min(0, delta))
+      }
+    }
+
+    const handlePointerUp = () => {
+      const offset = dragOffsetRef.current
+      if (!pipMode && offset > 140) {
+        setPipMode(true)
+        setRelatedOpen(false)
+      } else if (pipMode && offset < -80) {
+        setPipMode(false)
+      }
+      dragStartRef.current = null
+      updateDragOffset(0)
+      setIsDragging(false)
+    }
+
+    window.addEventListener('pointermove', handlePointerMove)
+    window.addEventListener('pointerup', handlePointerUp)
+    window.addEventListener('pointercancel', handlePointerUp)
+
+    return () => {
+      window.removeEventListener('pointermove', handlePointerMove)
+      window.removeEventListener('pointerup', handlePointerUp)
+      window.removeEventListener('pointercancel', handlePointerUp)
+    }
+  }, [isDragging, pipMode, updateDragOffset])
+
+  const handleDragStart = useCallback(
+    (event) => {
+      if (event.pointerType === 'mouse' && event.button !== 0) return
+      const target = event.target
+      if (
+        target.closest('.player-ui') ||
+        target.closest('.player-controls') ||
+        target.closest('.player-progress') ||
+        target.closest('.related-panel')
+      ) {
+        return
+      }
+      dragStartRef.current = event.clientY ?? 0
+      setIsDragging(true)
+      event.stopPropagation()
+      event.preventDefault()
+    },
+    [],
+  )
+
+  useEffect(() => {
+    const host = frameRef.current?.closest('.overlay-shell')
+    if (!host) return
+    host.classList.toggle('pip-floating', pipMode)
+    return () => {
+      host.classList.remove('pip-floating')
+    }
+  }, [pipMode])
+
+  const overlayClassName = `player-overlay${pipMode ? ' pip-mode' : ''}`
+  const frameClassName = `player-frame${pipMode ? ' pip-active' : ''}${isDragging ? ' dragging' : ''}`
+  const frameStyle = { transform: `translate3d(0, ${dragOffset}px, 0)` }
+
   return (
-    <div className="player-overlay" role="dialog" aria-modal="true">
+    <div className={overlayClassName} role="dialog" aria-modal="true">
       <button className="overlay-close" aria-label="Close player" onClick={onClose}>
         ×
       </button>
-      <div className="player-frame">
+      <div
+        className={frameClassName}
+        style={frameStyle}
+        ref={frameRef}
+        onPointerDown={pipMode ? handleDragStart : undefined}
+      >
         <div className="iframe-shell" ref={surfaceRef}>
+          <div className="drag-overlay" onPointerDown={handleDragStart} role="presentation">
+            <span />
+            <p>{pipMode ? 'Drag up to expand' : 'Drag down for mini player'}</p>
+          </div>
           {isYouTube ? (
             <>
               <div ref={ytContainerRef} className="yt-container" />

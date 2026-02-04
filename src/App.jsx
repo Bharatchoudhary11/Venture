@@ -19,6 +19,20 @@ function App() {
       })),
     }))
   }, [])
+  useEffect(() => {
+    const preloaders = []
+    categorizedFeed.forEach((category) => {
+      category.videos.forEach((video) => {
+        if (!video.thumbnailUrl) return
+        const img = new Image()
+        img.src = video.thumbnailUrl
+        preloaders.push(img)
+      })
+    })
+    return () => {
+      preloaders.splice(0, preloaders.length)
+    }
+  }, [categorizedFeed])
 
   useEffect(() => {
     document.body.style.overflow = overlayVisible ? 'hidden' : ''
