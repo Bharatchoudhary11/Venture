@@ -4,7 +4,7 @@ export function VideoCard({ video, categoryName, onSelect }) {
   return (
     <button className="video-card" onClick={() => onSelect(video)}>
       <div className="thumb-wrapper">
-        <img src={video.thumbnailUrl} alt={video.title} loading="lazy" />
+        <img src={video.thumbnailUrl} alt={video.title} loading="eager" />
         <span className="duration-chip">{video.duration ?? '—:—'}</span>
       </div>
       <div className="video-card-body">

@@ -1,5 +1,5 @@
 import PropTypes from 'prop-types'
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
 let ytApiPromise
 const loadYouTubeAPI = () => {
@@ -119,89 +119,6 @@ export function VideoPlayerOverlay({ video, categories = [], onVideoSelect, onCl
     }
   }, [videoId, video.mediaUrl])
 
-  useEffect(() => {
-    if (!isYouTube) return
-    let isMounted = true
-    loadYouTubeAPI()
-      .then((YT) => {
-        if (!isMounted || !ytContainerRef.current || !YT) return
-        playerRef.current = new YT.Player(ytContainerRef.current, {
-          videoId,
-          playerVars: { autoplay: 1, controls: 0, rel: 0, playsinline: 1 },
-          events: {
-            onReady: (event) => {
-              if (!isMounted) return
-              setDuration(event.target.getDuration?.() ?? 0)
-              setPlayerReady(true)
-              event.target.playVideo()
-              progressIntervalRef.current = window.setInterval(() => {
-                if (!playerRef.current) return
-                const time = playerRef.current.getCurrentTime?.() ?? 0
-                setCurrentTime(time)
-                const total = playerRef.current.getDuration?.()
-                if (total) setDuration(total)
-              }, 500)
-            },
-            onStateChange: (event) => {
-              if (!isMounted) return
-              const { PlayerState } = window.YT
-              if (event.data === PlayerState.PLAYING || event.data === PlayerState.BUFFERING) {
-                setIsPlaying(true)
-              } else if (event.data === PlayerState.PAUSED || event.data === PlayerState.ENDED) {
-                setIsPlaying(false)
-              }
-            },
-          },
-        })
-      })
-      .catch(() => {})
-
-    return () => {
-      isMounted = false
-      if (progressIntervalRef.current) {
-        clearInterval(progressIntervalRef.current)
-        progressIntervalRef.current = null
-      }
-      if (playerRef.current) {
-        playerRef.current.destroy()
-        playerRef.current = null
-      }
-    }
-  }, [isYouTube, videoId])
-
-  useEffect(() => {
-    if (isYouTube) return
-    const videoElement = htmlVideoRef.current
-    if (!videoElement) return
-
-    const handleLoaded = () => {
-      setDuration(videoElement.duration || 0)
-      setPlayerReady(true)
-      videoElement.play().catch(() => {})
-    }
-    const handleTime = () => setCurrentTime(videoElement.currentTime || 0)
-    const handlePlay = () => setIsPlaying(true)
-    const handlePause = () => setIsPlaying(false)
-    const handleEnded = () => setIsPlaying(false)
-
-    videoElement.addEventListener('loadedmetadata', handleLoaded)
-    videoElement.addEventListener('timeupdate', handleTime)
-    videoElement.addEventListener('play', handlePlay)
-    videoElement.addEventListener('pause', handlePause)
-    videoElement.addEventListener('ended', handleEnded)
-
-    videoElement.play().catch(() => {})
-
-    return () => {
-      videoElement.pause()
-      videoElement.removeEventListener('loadedmetadata', handleLoaded)
-      videoElement.removeEventListener('timeupdate', handleTime)
-      videoElement.removeEventListener('play', handlePlay)
-      videoElement.removeEventListener('pause', handlePause)
-      videoElement.removeEventListener('ended', handleEnded)
-    }
-  }, [isYouTube, video.mediaUrl])
-
   const togglePlay = () => {
     if (isYouTube) {
       const player = playerRef.current
@@ -261,10 +178,112 @@ export function VideoPlayerOverlay({ video, categories = [], onVideoSelect, onCl
     return relatedCategory?.videos ?? []
   }, [relatedCategory])
 
-  const handleRelatedSelect = (nextVideo) => {
-    if (!nextVideo || nextVideo.id === video.id) return
-    onVideoSelect?.(nextVideo)
-  }
+  const handleRelatedSelect = useCallback(
+    (nextVideo) => {
+      if (!nextVideo || nextVideo.id === video.id) return
+      onVideoSelect?.(nextVideo)
+    },
+    [onVideoSelect, video.id],
+  )
+
+  const playNextInCategory = useCallback(() => {
+    if (!relatedVideos.length) return
+    const currentIndex = relatedVideos.findIndex((item) => item.id === video.id)
+    if (currentIndex === -1) return
+    const nextVideo = relatedVideos[currentIndex + 1]
+    if (nextVideo) {
+      handleRelatedSelect(nextVideo)
+    }
+  }, [handleRelatedSelect, relatedVideos, video.id])
+
+  useEffect(() => {
+    if (!isYouTube) return
+    let isMounted = true
+    loadYouTubeAPI()
+      .then((YT) => {
+        if (!isMounted || !ytContainerRef.current || !YT) return
+        playerRef.current = new YT.Player(ytContainerRef.current, {
+          videoId,
+          playerVars: { autoplay: 1, controls: 0, rel: 0, playsinline: 1 },
+          events: {
+            onReady: (event) => {
+              if (!isMounted) return
+              setDuration(event.target.getDuration?.() ?? 0)
+              setPlayerReady(true)
+              event.target.playVideo()
+              progressIntervalRef.current = window.setInterval(() => {
+                if (!playerRef.current) return
+                const time = playerRef.current.getCurrentTime?.() ?? 0
+                setCurrentTime(time)
+                const total = playerRef.current.getDuration?.()
+                if (total) setDuration(total)
+              }, 500)
+            },
+            onStateChange: (event) => {
+              if (!isMounted) return
+              const { PlayerState } = window.YT
+              if (event.data === PlayerState.PLAYING || event.data === PlayerState.BUFFERING) {
+                setIsPlaying(true)
+              } else if (event.data === PlayerState.PAUSED) {
+                setIsPlaying(false)
+              } else if (event.data === PlayerState.ENDED) {
+                setIsPlaying(false)
+                playNextInCategory()
+              }
+            },
+          },
+        })
+      })
+      .catch(() => {})
+
+    return () => {
+      isMounted = false
+      if (progressIntervalRef.current) {
+        clearInterval(progressIntervalRef.current)
+        progressIntervalRef.current = null
+      }
+      if (playerRef.current) {
+        playerRef.current.destroy()
+        playerRef.current = null
+      }
+    }
+  }, [isYouTube, playNextInCategory, videoId])
+
+  useEffect(() => {
+    if (isYouTube) return
+    const videoElement = htmlVideoRef.current
+    if (!videoElement) return
+
+    const handleLoaded = () => {
+      setDuration(videoElement.duration || 0)
+      setPlayerReady(true)
+      videoElement.play().catch(() => {})
+    }
+    const handleTime = () => setCurrentTime(videoElement.currentTime || 0)
+    const handlePlay = () => setIsPlaying(true)
+    const handlePause = () => setIsPlaying(false)
+    const handleEnded = () => {
+      setIsPlaying(false)
+      playNextInCategory()
+    }
+
+    videoElement.addEventListener('loadedmetadata', handleLoaded)
+    videoElement.addEventListener('timeupdate', handleTime)
+    videoElement.addEventListener('play', handlePlay)
+    videoElement.addEventListener('pause', handlePause)
+    videoElement.addEventListener('ended', handleEnded)
+
+    videoElement.play().catch(() => {})
+
+    return () => {
+      videoElement.pause()
+      videoElement.removeEventListener('loadedmetadata', handleLoaded)
+      videoElement.removeEventListener('timeupdate', handleTime)
+      videoElement.removeEventListener('play', handlePlay)
+      videoElement.removeEventListener('pause', handlePause)
+      videoElement.removeEventListener('ended', handleEnded)
+    }
+  }, [isYouTube, playNextInCategory, video.mediaUrl])
 
   useEffect(() => {
     const surface = surfaceRef.current

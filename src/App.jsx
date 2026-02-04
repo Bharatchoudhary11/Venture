@@ -29,7 +29,7 @@ function App() {
 
   const handleVideoSelect = (video) => {
     setOverlayVideo(video)
-    requestAnimationFrame(() => setOverlayVisible(true))
+    setOverlayVisible(true)
   }
 
   const handleOverlayClose = () => {

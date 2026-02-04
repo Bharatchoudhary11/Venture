@@ -11,6 +11,10 @@ body {
   color: inherit;
 }
 
+html {
+  scroll-behavior: smooth;
+}
+
 .app-shell {
   min-height: 100vh;
   max-width: 1200px;
@@ -295,6 +299,7 @@ body {
   gap: 0.6rem;
   overflow-y: auto;
   padding-right: 0.25rem;
+  scroll-behavior: smooth;
 }
 
 .related-card {
@@ -308,10 +313,12 @@ body {
   border-radius: 0.85rem;
   cursor: pointer;
   align-items: center;
+  transition: transform 200ms ease, background 200ms ease, opacity 200ms ease;
 }
 
 .related-card:hover:not(:disabled) {
   background: rgba(56, 189, 248, 0.15);
+  transform: translateX(6px);
 }
 
 .related-card.active {
@@ -321,6 +328,21 @@ body {
 .related-card:disabled {
   cursor: default;
   opacity: 0.7;
+}
+
+.related-panel.open .panel-inner {
+  animation: panelFloat 260ms ease;
+}
+
+@keyframes panelFloat {
+  from {
+    opacity: 0;
+    transform: translateY(14px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 
 .related-thumb {
