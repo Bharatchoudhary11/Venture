@@ -73,6 +73,39 @@ const IconSkipBackward = () => (
   </svg>
 )
 
+const IconExpand = () => (
+  <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+    <path
+      fill="currentColor"
+      d="M6 4h5v2H8v3H6V4zm7 0h5v5h-2V6h-3V4zM6 13h2v3h3v2H6v-5zm10 3v-3h2v5h-5v-2h3z"
+    />
+  </svg>
+)
+
+const IconCollapse = () => (
+  <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+    <path
+      fill="currentColor"
+      d="M8 5h3V3H5v6h2zm8 0v4h2V3h-6v2zm-5 13H8v3H3v-6h2v4h4zm8 4v-4h-4v-2h6v6z"
+    />
+  </svg>
+)
+
+const IconMini = () => (
+  <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+    <path
+      fill="currentColor"
+      d="M4 16.5A1.5 1.5 0 0 1 5.5 15h13a1.5 1.5 0 0 1 1.5 1.5v3A1.5 1.5 0 0 1 18.5 21h-13A1.5 1.5 0 0 1 4 19.5z"
+    />
+    <path
+      d="M7 4h7a2 2 0 0 1 2 2v4H5V6a2 2 0 0 1 2-2z"
+      stroke="currentColor"
+      strokeWidth="1.6"
+      fill="none"
+    />
+  </svg>
+)
+
 const formatTime = (seconds) => {
   if (!Number.isFinite(seconds)) return '00:00'
   const totalSeconds = Math.max(0, Math.floor(seconds))
@@ -101,6 +134,7 @@ export function VideoPlayerOverlay({ video, categories = [], onVideoSelect, onCl
   const [pipMode, setPipMode] = useState(false)
   const [isDragging, setIsDragging] = useState(false)
   const [dragOffset, setDragOffset] = useState(0)
+  const [isFullscreen, setIsFullscreen] = useState(false)
 
   const isYouTube =
     video.mediaType?.toUpperCase() === 'YOUTUBE' ||
@@ -121,6 +155,14 @@ export function VideoPlayerOverlay({ video, categories = [], onVideoSelect, onCl
     return () => {
       if (dragAnimationRef.current) cancelAnimationFrame(dragAnimationRef.current)
     }
+  }, [])
+
+  useEffect(() => {
+    const handleFullscreenChange = () => {
+      setIsFullscreen(Boolean(document.fullscreenElement))
+    }
+    document.addEventListener('fullscreenchange', handleFullscreenChange)
+    return () => document.removeEventListener('fullscreenchange', handleFullscreenChange)
   }, [])
 
   useEffect(() => {
@@ -427,11 +469,26 @@ export function VideoPlayerOverlay({ video, categories = [], onVideoSelect, onCl
   const frameClassName = `player-frame${pipMode ? ' pip-active' : ''}${isDragging ? ' dragging' : ''}`
   const frameStyle = { transform: `translate3d(0, ${dragOffset}px, 0)` }
 
+  const toggleFullscreen = () => {
+    if (pipMode) {
+      setPipMode(false)
+      return
+    }
+    if (isFullscreen) {
+      document.exitFullscreen?.()
+      return
+    }
+    const target = surfaceRef.current
+    target?.requestFullscreen?.()
+  }
+
   return (
     <div className={overlayClassName} role="dialog" aria-modal="true">
-      <button className="overlay-close" aria-label="Close player" onClick={onClose}>
-        ×
-      </button>
+      {!pipMode && (
+        <button className="overlay-close" aria-label="Close player" onClick={onClose}>
+          ×
+        </button>
+      )}
       <div
         className={frameClassName}
         style={frameStyle}
@@ -472,11 +529,11 @@ export function VideoPlayerOverlay({ video, categories = [], onVideoSelect, onCl
                 <span>{formatTime(duration)}</span>
               </div>
             </div>
-            <div className="player-controls compact">
-              <button
-                className="icon-button secondary"
-                onClick={() => seekBy(-10)}
-                aria-label="Skip backward 10 seconds"
+          <div className="player-controls compact">
+            <button
+              className="icon-button secondary"
+              onClick={() => seekBy(-10)}
+              aria-label="Skip backward 10 seconds"
               >
                 <IconSkipBackward />
                 <span className="sr-only">Skip backward 10 seconds</span>
@@ -489,16 +546,34 @@ export function VideoPlayerOverlay({ video, categories = [], onVideoSelect, onCl
                 {isPlaying ? <IconPause /> : <IconPlay />}
                 <span className="sr-only">{isPlaying ? 'Pause video' : 'Play video'}</span>
               </button>
+            <button
+              className="icon-button secondary"
+              onClick={() => seekBy(10)}
+              aria-label="Skip forward 10 seconds"
+            >
+              <IconSkipForward />
+              <span className="sr-only">Skip forward 10 seconds</span>
+            </button>
+            {!pipMode && (
               <button
-                className="icon-button secondary"
-                onClick={() => seekBy(10)}
-                aria-label="Skip forward 10 seconds"
+                className="icon-button secondary fullscreen"
+                onClick={() => setPipMode(true)}
+                aria-label="Minimize player"
               >
-                <IconSkipForward />
-                <span className="sr-only">Skip forward 10 seconds</span>
+                <IconMini />
+                <span className="sr-only">Minimize player</span>
               </button>
-            </div>
+            )}
+            <button
+              className="icon-button secondary fullscreen"
+              onClick={toggleFullscreen}
+              aria-label={isFullscreen ? 'Exit fullscreen' : 'Enter fullscreen'}
+            >
+              {isFullscreen ? <IconCollapse /> : <IconExpand />}
+              <span className="sr-only">{isFullscreen ? 'Exit fullscreen' : 'Enter fullscreen'}</span>
+            </button>
           </div>
+        </div>
           <div className={`related-panel ${relatedOpen ? 'open' : ''}`}>
             <button
               className="panel-toggle"
@@ -534,6 +609,45 @@ export function VideoPlayerOverlay({ video, categories = [], onVideoSelect, onCl
               </div>
             </div>
           </div>
+          {pipMode && (
+            <div className="pip-toolbar">
+              <div className="pip-title" title={video.title}>
+                {video.title}
+              </div>
+              <div className="pip-actions">
+                <button
+                  className="pip-control"
+                  onClick={(event) => {
+                    event.stopPropagation()
+                    setPipMode(false)
+                  }}
+                >
+                  <IconExpand />
+                  <span className="sr-only">Expand player</span>
+                </button>
+                <button
+                  className="pip-control"
+                  onClick={(event) => {
+                    event.stopPropagation()
+                    togglePlay()
+                  }}
+                >
+                  {isPlaying ? <IconPause /> : <IconPlay />}
+                  <span className="sr-only">{isPlaying ? 'Pause video' : 'Play video'}</span>
+                </button>
+                <button
+                  className="pip-control close"
+                  onClick={(event) => {
+                    event.stopPropagation()
+                    onClose()
+                  }}
+                >
+                  ×
+                  <span className="sr-only">Close mini player</span>
+                </button>
+              </div>
+            </div>
+          )}
         </div>
         <div className="player-meta">
           <span className="category-chip">{video.categoryName}</span>
