@@ -15,6 +15,7 @@ function App() {
         ...video,
         id: video.slug,
         categoryName: category.name,
+        categorySlug: category.slug,
       })),
     }))
   }, [])
@@ -71,7 +72,14 @@ function App() {
       </div>
 
       <div className={`overlay-shell ${overlayVisible ? 'visible' : ''}`}>
-        {overlayVideo && <VideoPlayerOverlay video={overlayVideo} onClose={handleOverlayClose} />}
+        {overlayVideo && (
+          <VideoPlayerOverlay
+            video={overlayVideo}
+            categories={categorizedFeed}
+            onVideoSelect={handleVideoSelect}
+            onClose={handleOverlayClose}
+          />
+        )}
       </div>
     </main>
   )

@@ -81,16 +81,19 @@ const formatTime = (seconds) => {
   return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`
 }
 
-export function VideoPlayerOverlay({ video, onClose }) {
+export function VideoPlayerOverlay({ video, categories = [], onVideoSelect, onClose }) {
   const ytContainerRef = useRef(null)
   const playerRef = useRef(null)
   const htmlVideoRef = useRef(null)
   const progressIntervalRef = useRef(null)
+  const surfaceRef = useRef(null)
+  const touchStartRef = useRef(null)
 
   const [isPlaying, setIsPlaying] = useState(true)
   const [playerReady, setPlayerReady] = useState(false)
   const [currentTime, setCurrentTime] = useState(0)
   const [duration, setDuration] = useState(0)
+  const [relatedOpen, setRelatedOpen] = useState(false)
 
   const isYouTube =
     video.mediaType?.toUpperCase() === 'YOUTUBE' ||
@@ -246,13 +249,70 @@ export function VideoPlayerOverlay({ video, onClose }) {
   }
   const progressPercent = duration ? Math.min((currentTime / duration) * 100, 100) : 0
 
+  const relatedCategory = useMemo(() => {
+    return (
+      categories.find(
+        (entry) => entry.name === video.categoryName || entry.slug === video.categorySlug,
+      ) || null
+    )
+  }, [categories, video.categoryName, video.categorySlug])
+
+  const relatedVideos = useMemo(() => {
+    return relatedCategory?.videos ?? []
+  }, [relatedCategory])
+
+  const handleRelatedSelect = (nextVideo) => {
+    if (!nextVideo || nextVideo.id === video.id) return
+    onVideoSelect?.(nextVideo)
+  }
+
+  useEffect(() => {
+    const surface = surfaceRef.current
+    if (!surface) return
+
+    const handleWheel = (event) => {
+      if (!relatedOpen && event.deltaY > 12) {
+        setRelatedOpen(true)
+      } else if (relatedOpen && event.deltaY < -12) {
+        setRelatedOpen(false)
+      }
+    }
+
+    const handleTouchStart = (event) => {
+      touchStartRef.current = event.touches[0]?.clientY ?? null
+    }
+
+    const handleTouchMove = (event) => {
+      if (touchStartRef.current == null) return
+      const currentY = event.touches[0]?.clientY ?? touchStartRef.current
+      const delta = touchStartRef.current - currentY
+      if (!relatedOpen && delta > 30) {
+        setRelatedOpen(true)
+        touchStartRef.current = currentY
+      } else if (relatedOpen && delta < -30) {
+        setRelatedOpen(false)
+        touchStartRef.current = currentY
+      }
+    }
+
+    surface.addEventListener('wheel', handleWheel, { passive: true })
+    surface.addEventListener('touchstart', handleTouchStart, { passive: true })
+    surface.addEventListener('touchmove', handleTouchMove, { passive: true })
+
+    return () => {
+      surface.removeEventListener('wheel', handleWheel)
+      surface.removeEventListener('touchstart', handleTouchStart)
+      surface.removeEventListener('touchmove', handleTouchMove)
+    }
+  }, [relatedOpen])
+
   return (
     <div className="player-overlay" role="dialog" aria-modal="true">
       <button className="overlay-close" aria-label="Close player" onClick={onClose}>
         ×
       </button>
       <div className="player-frame">
-        <div className="iframe-shell">
+        <div className="iframe-shell" ref={surfaceRef}>
           {isYouTube ? (
             <>
               <div ref={ytContainerRef} className="yt-container" />
@@ -309,6 +369,41 @@ export function VideoPlayerOverlay({ video, onClose }) {
               </button>
             </div>
           </div>
+          <div className={`related-panel ${relatedOpen ? 'open' : ''}`}>
+            <button
+              className="panel-toggle"
+              onClick={() => setRelatedOpen((prev) => !prev)}
+              aria-label={relatedOpen ? 'Hide related videos' : 'Show related videos'}
+            >
+              <span className="panel-handle" />
+              <span className="panel-label">{relatedOpen ? 'Hide list' : 'Up next'}</span>
+            </button>
+            <div className="panel-inner">
+              <div className="related-header">
+                <div>
+                  <p className="eyebrow">Related</p>
+                  <h3>{video.categoryName}</h3>
+                </div>
+                <span>{relatedVideos.length} videos</span>
+              </div>
+              <div className="related-list">
+                {relatedVideos.map((item) => (
+                  <button
+                    key={item.id}
+                    className={`related-card ${item.id === video.id ? 'active' : ''}`}
+                    onClick={() => handleRelatedSelect(item)}
+                    disabled={item.id === video.id}
+                  >
+                    <img src={item.thumbnailUrl} alt="" className="related-thumb" />
+                    <div>
+                      <p className="related-title">{item.title}</p>
+                      <p className="related-meta">{item.duration ?? '—:—'}</p>
+                    </div>
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
         </div>
         <div className="player-meta">
           <span className="category-chip">{video.categoryName}</span>
@@ -324,8 +419,27 @@ VideoPlayerOverlay.propTypes = {
     title: PropTypes.string.isRequired,
     mediaUrl: PropTypes.string.isRequired,
     categoryName: PropTypes.string.isRequired,
+    categorySlug: PropTypes.string,
     slug: PropTypes.string,
     mediaType: PropTypes.string,
   }).isRequired,
+  categories: PropTypes.arrayOf(
+    PropTypes.shape({
+      slug: PropTypes.string.isRequired,
+      name: PropTypes.string.isRequired,
+      videos: PropTypes.arrayOf(
+        PropTypes.shape({
+          id: PropTypes.string.isRequired,
+          title: PropTypes.string.isRequired,
+          thumbnailUrl: PropTypes.string,
+          duration: PropTypes.string,
+          mediaUrl: PropTypes.string.isRequired,
+          categoryName: PropTypes.string.isRequired,
+          categorySlug: PropTypes.string,
+        }),
+      ),
+    }),
+  ),
+  onVideoSelect: PropTypes.func.isRequired,
   onClose: PropTypes.func.isRequired,
 }
