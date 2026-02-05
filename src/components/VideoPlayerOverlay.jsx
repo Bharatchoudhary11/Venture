@@ -1,5 +1,6 @@
 import PropTypes from 'prop-types'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import Hls from 'hls.js'
 
 const VIRTUAL_ITEM_HEIGHT = 84
 const VIRTUAL_BUFFER = 6
@@ -132,6 +133,7 @@ export function VideoPlayerOverlay({ video, categories = [], onVideoSelect, onPi
   const virtualIndicesRef = useRef({ start: 0, end: 0 })
   const autoPlayTimerRef = useRef(null)
   const resumeTimeRef = useRef(null)
+  const hlsInstanceRef = useRef(null)
 
   const [isPlaying, setIsPlaying] = useState(true)
   const [playerReady, setPlayerReady] = useState(false)
@@ -148,6 +150,7 @@ export function VideoPlayerOverlay({ video, categories = [], onVideoSelect, onPi
   const isYouTube =
     video.mediaType?.toUpperCase() === 'YOUTUBE' ||
     /youtube\.com|youtu\.be/.test(video.mediaUrl ?? '')
+  const isHlsSource = !isYouTube && /\.m3u8($|\?)/i.test(video.mediaUrl ?? '')
   const videoId = useMemo(() => extractVideoId(video.mediaUrl || video.slug), [video.mediaUrl, video.slug])
   const updateDragOffset = useCallback((value) => {
     dragOffsetRef.current = value
@@ -246,6 +249,34 @@ export function VideoPlayerOverlay({ video, categories = [], onVideoSelect, onPi
     onPipChange?.(false)
     updateDragOffset(0)
   }, [onPipChange, updateDragOffset, videoId, video.mediaUrl])
+
+  useEffect(() => {
+    if (!isHlsSource) {
+      hlsInstanceRef.current?.destroy()
+      hlsInstanceRef.current = null
+      if (htmlVideoRef.current && !isYouTube) {
+        htmlVideoRef.current.src = video.mediaUrl
+      }
+      return
+    }
+
+    const videoElement = htmlVideoRef.current
+    if (!videoElement) return
+
+    if (videoElement.canPlayType('application/vnd.apple.mpegurl')) {
+      videoElement.src = video.mediaUrl
+    } else if (Hls.isSupported()) {
+      const hls = new Hls({ enableWorker: true })
+      hls.loadSource(video.mediaUrl)
+      hls.attachMedia(videoElement)
+      hlsInstanceRef.current = hls
+    }
+
+    return () => {
+      hlsInstanceRef.current?.destroy()
+      hlsInstanceRef.current = null
+    }
+  }, [isHlsSource, isYouTube, video.mediaUrl])
 
   const togglePlay = () => {
     if (isYouTube) {
@@ -598,7 +629,12 @@ export function VideoPlayerOverlay({ video, categories = [], onVideoSelect, onPi
             </>
           ) : (
             <>
-              <video ref={htmlVideoRef} src={video.mediaUrl} playsInline />
+              <video
+                ref={htmlVideoRef}
+                src={!isHlsSource ? video.mediaUrl : undefined}
+                playsInline
+                preload="metadata"
+              />
               {!playerReady && <div className="player-loading">Loading video…</div>}
             </>
           )}
