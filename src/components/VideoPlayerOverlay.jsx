@@ -117,7 +117,7 @@ const formatTime = (seconds) => {
   return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`
 }
 
-export function VideoPlayerOverlay({ video, categories = [], onVideoSelect, onClose }) {
+export function VideoPlayerOverlay({ video, categories = [], onVideoSelect, onPipChange, onClose }) {
   const ytContainerRef = useRef(null)
   const playerRef = useRef(null)
   const htmlVideoRef = useRef(null)
@@ -131,6 +131,7 @@ export function VideoPlayerOverlay({ video, categories = [], onVideoSelect, onCl
   const virtualListRef = useRef(null)
   const virtualIndicesRef = useRef({ start: 0, end: 0 })
   const autoPlayTimerRef = useRef(null)
+  const resumeTimeRef = useRef(null)
 
   const [isPlaying, setIsPlaying] = useState(true)
   const [playerReady, setPlayerReady] = useState(false)
@@ -159,11 +160,60 @@ export function VideoPlayerOverlay({ video, categories = [], onVideoSelect, onCl
     })
   }, [])
 
+  const capturePlaybackSnapshot = useCallback(() => {
+    let time = 0
+    if (isYouTube) {
+      time = playerRef.current?.getCurrentTime?.() ?? 0
+    } else {
+      time = htmlVideoRef.current?.currentTime ?? 0
+    }
+    resumeTimeRef.current = time
+  }, [isYouTube])
+
+  const restorePlaybackSnapshot = useCallback(() => {
+    if (resumeTimeRef.current == null) return
+    const time = resumeTimeRef.current
+    const seek = () => {
+      if (isYouTube) {
+        playerRef.current?.seekTo?.(time, true)
+        if (isPlaying) {
+          playerRef.current?.playVideo?.()
+        }
+      } else if (htmlVideoRef.current) {
+        htmlVideoRef.current.currentTime = time
+        if (!htmlVideoRef.current.paused) {
+          htmlVideoRef.current.play().catch(() => {})
+        }
+      }
+      resumeTimeRef.current = null
+    }
+    if (isYouTube) {
+      setTimeout(seek, 150)
+    } else {
+      requestAnimationFrame(seek)
+    }
+  }, [isPlaying, isYouTube])
+
   useEffect(() => {
     return () => {
       if (dragAnimationRef.current) cancelAnimationFrame(dragAnimationRef.current)
+      resumeTimeRef.current = null
     }
   }, [])
+
+  useEffect(() => {
+    onPipChange?.(pipMode)
+    if (!pipMode && resumeTimeRef.current != null) {
+      const timer = setTimeout(() => {
+        restorePlaybackSnapshot()
+      }, 50)
+      return () => clearTimeout(timer)
+    }
+  }, [pipMode, onPipChange, restorePlaybackSnapshot])
+
+  useEffect(() => {
+    return () => onPipChange?.(false)
+  }, [onPipChange])
 
   useEffect(() => {
     const handleFullscreenChange = () => {
@@ -193,8 +243,9 @@ export function VideoPlayerOverlay({ video, categories = [], onVideoSelect, onCl
     dragStartRef.current = null
     setIsDragging(false)
     setPipMode(false)
+    onPipChange?.(false)
     updateDragOffset(0)
-  }, [updateDragOffset, videoId, video.mediaUrl])
+  }, [onPipChange, updateDragOffset, videoId, video.mediaUrl])
 
   const togglePlay = () => {
     if (isYouTube) {
@@ -258,6 +309,7 @@ export function VideoPlayerOverlay({ video, categories = [], onVideoSelect, onCl
   const handleRelatedSelect = useCallback(
     (nextVideo) => {
       if (!nextVideo || nextVideo.id === video.id) return
+      resumeTimeRef.current = null
       onVideoSelect?.(nextVideo)
     },
     [onVideoSelect, video.id],
@@ -450,9 +502,11 @@ export function VideoPlayerOverlay({ video, categories = [], onVideoSelect, onCl
     const handlePointerUp = () => {
       const offset = dragOffsetRef.current
       if (!pipMode && offset > 140) {
+        capturePlaybackSnapshot()
         setPipMode(true)
         setRelatedOpen(false)
       } else if (pipMode && offset < -80) {
+        capturePlaybackSnapshot()
         setPipMode(false)
       }
       dragStartRef.current = null
@@ -469,7 +523,7 @@ export function VideoPlayerOverlay({ video, categories = [], onVideoSelect, onCl
       window.removeEventListener('pointerup', handlePointerUp)
       window.removeEventListener('pointercancel', handlePointerUp)
     }
-  }, [isDragging, pipMode, updateDragOffset])
+  }, [capturePlaybackSnapshot, isDragging, pipMode, updateDragOffset])
 
   const handleDragStart = useCallback(
     (event) => {
@@ -506,6 +560,7 @@ export function VideoPlayerOverlay({ video, categories = [], onVideoSelect, onCl
 
   const toggleFullscreen = () => {
     if (pipMode) {
+      capturePlaybackSnapshot()
       setPipMode(false)
       return
     }
@@ -593,7 +648,10 @@ export function VideoPlayerOverlay({ video, categories = [], onVideoSelect, onCl
             {!pipMode && (
               <button
                 className="icon-button secondary fullscreen"
-                onClick={() => setPipMode(true)}
+                onClick={() => {
+                  capturePlaybackSnapshot()
+                  setPipMode(true)
+                }}
                 aria-label="Minimize player"
               >
                 <IconMini />
@@ -655,6 +713,7 @@ export function VideoPlayerOverlay({ video, categories = [], onVideoSelect, onCl
                   className="pip-control"
                   onClick={(event) => {
                     event.stopPropagation()
+                    capturePlaybackSnapshot()
                     setPipMode(false)
                   }}
                 >
@@ -721,5 +780,6 @@ VideoPlayerOverlay.propTypes = {
     }),
   ),
   onVideoSelect: PropTypes.func.isRequired,
+  onPipChange: PropTypes.func,
   onClose: PropTypes.func.isRequired,
 }

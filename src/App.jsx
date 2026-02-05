@@ -13,6 +13,7 @@ const categoryThemes = {
 function App() {
   const [overlayVideo, setOverlayVideo] = useState(null)
   const [overlayVisible, setOverlayVisible] = useState(false)
+  const [isMiniPlayer, setIsMiniPlayer] = useState(false)
   const [activeCategory, setActiveCategory] = useState('all')
 
   const categorizedFeed = useMemo(() => {
@@ -42,11 +43,11 @@ function App() {
   }, [categorizedFeed])
 
   useEffect(() => {
-    document.body.style.overflow = overlayVisible ? 'hidden' : ''
+    document.body.style.overflow = overlayVisible && !isMiniPlayer ? 'hidden' : ''
     return () => {
       document.body.style.overflow = ''
     }
-  }, [overlayVisible])
+  }, [overlayVisible, isMiniPlayer])
 
   const handleVideoSelect = (video) => {
     setOverlayVideo(video)
@@ -143,6 +144,7 @@ function App() {
             categories={categorizedFeed}
             onVideoSelect={handleVideoSelect}
             onClose={handleOverlayClose}
+            onPipChange={setIsMiniPlayer}
           />
         )}
       </div>
