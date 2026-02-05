@@ -4,9 +4,16 @@ import { VideoCard } from './components/VideoCard'
 import { VideoPlayerOverlay } from './components/VideoPlayerOverlay'
 import { videoDataset } from './data/videos'
 
+const categoryThemes = {
+  'social-media-ai': { accent: '#f472b6', glow: 'rgba(244, 114, 182, 0.25)' },
+  'ai-income': { accent: '#34d399', glow: 'rgba(52, 211, 153, 0.25)' },
+  'ai-essentials': { accent: '#60a5fa', glow: 'rgba(96, 165, 250, 0.25)' },
+}
+
 function App() {
   const [overlayVideo, setOverlayVideo] = useState(null)
   const [overlayVisible, setOverlayVisible] = useState(false)
+  const [activeCategory, setActiveCategory] = useState('all')
 
   const categorizedFeed = useMemo(() => {
     return videoDataset.categories.map(({ category, contents }) => ({
@@ -51,17 +58,60 @@ function App() {
     setTimeout(() => setOverlayVideo(null), 320)
   }
 
+  const filterOptions = useMemo(() => {
+    const slugToCategory = Object.fromEntries(categorizedFeed.map((category) => [category.slug, category]))
+    const ordered = [
+      { label: 'All', value: 'all' },
+      { label: 'Social Media AI', value: 'social-media-ai' },
+      { label: 'AI Income', value: 'ai-income' },
+      { label: 'AI Essentials', value: 'ai-essentials' },
+    ]
+    return ordered
+      .filter((option) => option.value === 'all' || slugToCategory[option.value])
+      .map((option) => ({
+        ...option,
+        accent: option.value === 'all' ? '#38bdf8' : categoryThemes[option.value]?.accent,
+      }))
+  }, [categorizedFeed])
+
+  const visibleFeed = activeCategory === 'all' ? categorizedFeed : categorizedFeed.filter((category) => category.slug === activeCategory)
+
   return (
     <main className="app-shell">
       <header className="app-header">
         <p className="eyebrow">Home · Video Feed</p>
-        <h1>Curated Videos by Category</h1>
         <p>Browse immersive clips crafted for motion studies, UI demos, and motion graphics inspiration.</p>
+        <div className="filter-row" role="tablist" aria-label="Category filters">
+          {filterOptions.map((filter) => (
+            <button
+              key={filter.value}
+              className={`filter-chip ${filter.value === activeCategory ? 'active' : ''}`}
+              style={{
+                '--chip-accent': filter.accent ?? '#a3a3a3',
+              }}
+              onClick={() => setActiveCategory(filter.value)}
+              role="tab"
+              aria-selected={filter.value === activeCategory}
+              aria-pressed={filter.value === activeCategory}
+            >
+              {filter.label}
+            </button>
+          ))}
+        </div>
       </header>
 
       <div className="category-feed">
-        {categorizedFeed.map((category) => (
-          <section key={category.slug} className="category-section">
+        {visibleFeed.map((category) => {
+          const theme = categoryThemes[category.slug] || { accent: '#38bdf8', glow: 'rgba(56, 189, 248, 0.2)' }
+          return (
+            <section
+              key={category.slug}
+              className="category-section"
+              style={{
+                '--section-accent': theme.accent,
+                '--section-glow': theme.glow,
+              }}
+            >
             <div className="section-header">
               <div className="section-title">
                 {category.iconUrl && <img src={category.iconUrl} alt="" aria-hidden="true" />}
@@ -82,7 +132,8 @@ function App() {
               ))}
             </div>
           </section>
-        ))}
+          )
+        })}
       </div>
 
       <div className={`overlay-shell ${overlayVisible ? 'visible' : ''}`}>

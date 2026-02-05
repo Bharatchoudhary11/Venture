@@ -142,6 +142,7 @@ export function VideoPlayerOverlay({ video, categories = [], onVideoSelect, onCl
   const [dragOffset, setDragOffset] = useState(0)
   const [isFullscreen, setIsFullscreen] = useState(false)
   const [countdown, setCountdown] = useState(null)
+  const [, setRenderTick] = useState(0)
 
   const isYouTube =
     video.mediaType?.toUpperCase() === 'YOUTUBE' ||
@@ -518,17 +519,18 @@ export function VideoPlayerOverlay({ video, categories = [], onVideoSelect, onCl
 
   return (
     <div className={overlayClassName} role="dialog" aria-modal="true">
-      {!pipMode && (
-        <button className="overlay-close" aria-label="Close player" onClick={onClose}>
-          ×
-        </button>
-      )}
       <div
         className={frameClassName}
         style={frameStyle}
         ref={frameRef}
         onPointerDown={pipMode ? handleDragStart : undefined}
       >
+        <button className="overlay-close" aria-label="Close player" onClick={(event) => {
+          event.stopPropagation()
+          onClose()
+        }}>
+          ×
+        </button>
         <div className="iframe-shell" ref={surfaceRef}>
           <div className="drag-overlay" onPointerDown={handleDragStart} role="presentation">
             <span />
