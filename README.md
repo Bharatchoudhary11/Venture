@@ -1,6 +1,6 @@
 # Mobile Video Player Experience
 
-A React + Vite application that recreates a YouTube-style mobile experience with gesture-driven playback, an in-player related list, and an in-app picture-in-picture dock. The bundled dataset (AI-focused video catalog) lets you demo all interactions out of the box.
+
 
 ## Features
 
@@ -70,4 +70,3 @@ src/
 - HLS playback / quality selector
 - Server-provided catalogs with caching + pagination
 
-Feel free to fork and extend the UX—most interactions live in `VideoPlayerOverlay.jsx`, making it easy to plug in new gestures or data sources.
