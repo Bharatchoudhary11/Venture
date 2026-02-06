@@ -86,15 +86,6 @@ const IconExpand = () => (
   </svg>
 )
 
-const IconCollapse = () => (
-  <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
-    <path
-      fill="currentColor"
-      d="M8 5h3V3H5v6h2zm8 0v4h2V3h-6v2zm-5 13H8v3H3v-6h2v4h4zm8 4v-4h-4v-2h6v6z"
-    />
-  </svg>
-)
-
 const IconMini = () => (
   <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
     <path
@@ -134,6 +125,7 @@ export function VideoPlayerOverlay({ video, categories = [], onVideoSelect, onPi
   const autoPlayTimerRef = useRef(null)
   const resumeTimeRef = useRef(null)
   const hlsInstanceRef = useRef(null)
+  const orientationLockRef = useRef(false)
 
   const [isPlaying, setIsPlaying] = useState(true)
   const [playerReady, setPlayerReady] = useState(false)
@@ -146,6 +138,30 @@ export function VideoPlayerOverlay({ video, categories = [], onVideoSelect, onPi
   const [isFullscreen, setIsFullscreen] = useState(false)
   const [countdown, setCountdown] = useState(null)
   const [, setRenderTick] = useState(0)
+  const prevViewportRef = useRef(null)
+  const [isCompactViewport, setIsCompactViewport] = useState(() => {
+    if (typeof window === 'undefined' || !window.matchMedia) return false
+    return window.matchMedia('(max-width: 640px)').matches
+  })
+
+  useEffect(() => {
+    if (typeof window === 'undefined' || !window.matchMedia) return undefined
+    const mediaQuery = window.matchMedia('(max-width: 640px)')
+    const handleChange = (event) => setIsCompactViewport(event.matches)
+    handleChange(mediaQuery)
+    if (mediaQuery.addEventListener) {
+      mediaQuery.addEventListener('change', handleChange)
+    } else {
+      mediaQuery.addListener(handleChange)
+    }
+    return () => {
+      if (mediaQuery.removeEventListener) {
+        mediaQuery.removeEventListener('change', handleChange)
+      } else {
+        mediaQuery.removeListener(handleChange)
+      }
+    }
+  }, [])
 
   const isYouTube =
     video.mediaType?.toUpperCase() === 'YOUTUBE' ||
@@ -197,12 +213,40 @@ export function VideoPlayerOverlay({ video, categories = [], onVideoSelect, onPi
     }
   }, [isPlaying, isYouTube])
 
+  const releaseOrientationLock = useCallback(() => {
+    if (typeof window === 'undefined') return
+    if (orientationLockRef.current && window.screen?.orientation?.unlock) {
+      try {
+        window.screen.orientation.unlock()
+      } catch {}
+    }
+    orientationLockRef.current = false
+  }, [])
+
+  const requestOrientationLock = useCallback(async () => {
+    if (typeof window === 'undefined') return
+    if (window.screen?.orientation?.lock) {
+      try {
+        await window.screen.orientation.lock('landscape-primary')
+        orientationLockRef.current = true
+      } catch {
+        orientationLockRef.current = false
+      }
+    }
+  }, [])
+
   useEffect(() => {
     return () => {
       if (dragAnimationRef.current) cancelAnimationFrame(dragAnimationRef.current)
       resumeTimeRef.current = null
     }
   }, [])
+
+  useEffect(() => {
+    return () => {
+      releaseOrientationLock()
+    }
+  }, [releaseOrientationLock])
 
   useEffect(() => {
     onPipChange?.(pipMode)
@@ -220,11 +264,15 @@ export function VideoPlayerOverlay({ video, categories = [], onVideoSelect, onPi
 
   useEffect(() => {
     const handleFullscreenChange = () => {
-      setIsFullscreen(Boolean(document.fullscreenElement))
+      const active = Boolean(document.fullscreenElement)
+      setIsFullscreen(active)
+      if (!active) {
+        releaseOrientationLock()
+      }
     }
     document.addEventListener('fullscreenchange', handleFullscreenChange)
     return () => document.removeEventListener('fullscreenchange', handleFullscreenChange)
-  }, [])
+  }, [releaseOrientationLock])
 
   useEffect(() => {
     const handleKeyDown = (event) => {
@@ -510,13 +558,30 @@ export function VideoPlayerOverlay({ video, categories = [], onVideoSelect, onPi
       surface.removeEventListener('touchmove', handleTouchMove)
       relatedListEl?.removeEventListener('scroll', handleVirtualScroll)
     }
-  }, [relatedOpen, relatedVideos.length])
+  }, [isCompactViewport, relatedOpen, relatedVideos.length, pipMode])
 
   useEffect(() => {
     if (pipMode) {
       setRelatedOpen(false)
     }
   }, [pipMode])
+
+  useEffect(() => {
+    if (prevViewportRef.current === null) {
+      prevViewportRef.current = isCompactViewport
+    }
+    if (prevViewportRef.current !== isCompactViewport) {
+      if (isCompactViewport && !pipMode) {
+        setRelatedOpen(true)
+      } else if (!isCompactViewport) {
+        setRelatedOpen(false)
+      }
+      prevViewportRef.current = isCompactViewport
+    } else if (isCompactViewport && !pipMode && !relatedOpen) {
+      // initial mount on mobile should expose list
+      setRelatedOpen(true)
+    }
+  }, [isCompactViewport, pipMode, relatedOpen])
 
   useEffect(() => {
     if (!isDragging) return
@@ -580,27 +645,96 @@ export function VideoPlayerOverlay({ video, categories = [], onVideoSelect, onPi
     const host = frameRef.current?.closest('.overlay-shell')
     if (!host) return
     host.classList.toggle('pip-floating', pipMode)
+    host.classList.toggle('mobile-stacked', isCompactViewport && !pipMode && !isFullscreen)
     return () => {
       host.classList.remove('pip-floating')
+      host.classList.remove('mobile-stacked')
     }
-  }, [pipMode])
+  }, [pipMode, isCompactViewport, isFullscreen])
 
-  const overlayClassName = `player-overlay${pipMode ? ' pip-mode' : ''}`
+  const overlayClassName = `player-overlay${pipMode ? ' pip-mode' : ''}${isCompactViewport ? ' mobile-layout' : ''}${
+    isFullscreen ? ' fullscreen-active' : ''
+  }`
   const frameClassName = `player-frame${pipMode ? ' pip-active' : ''}${isDragging ? ' dragging' : ''}`
   const frameStyle = { transform: `translate3d(0, ${dragOffset}px, 0)` }
+  const showFullscreenButton = !pipMode
 
-  const toggleFullscreen = () => {
+  const toggleFullscreen = useCallback(async () => {
     if (pipMode) {
       capturePlaybackSnapshot()
       setPipMode(false)
       return
     }
+    const exitFullscreenFn =
+      document.exitFullscreen ||
+      document.webkitExitFullscreen ||
+      document.msExitFullscreen ||
+      document.mozCancelFullScreen
     if (isFullscreen) {
-      document.exitFullscreen?.()
+      try {
+        await exitFullscreenFn?.call(document)
+      } catch {
+        exitFullscreenFn && exitFullscreenFn.call(document)
+      }
+      releaseOrientationLock()
       return
     }
     const target = surfaceRef.current
-    target?.requestFullscreen?.()
+    if (!target) return
+    const requestFullscreenFn =
+      target.requestFullscreen ||
+      target.webkitRequestFullscreen ||
+      target.msRequestFullscreen ||
+      target.mozRequestFullScreen
+    if (!requestFullscreenFn) return
+    try {
+      await requestFullscreenFn.call(target, { navigationUI: 'hide' })
+    } catch {
+      requestFullscreenFn.call(target)
+    }
+    await requestOrientationLock()
+  }, [capturePlaybackSnapshot, isFullscreen, pipMode, releaseOrientationLock, requestOrientationLock])
+
+  const renderRelatedPanel = (variant) => {
+    const mobile = variant === 'mobile'
+    const panelClass = `related-panel ${relatedOpen ? 'open' : ''}${mobile ? ' mobile-inline' : ''}`
+    return (
+      <div className={panelClass}>
+        <button
+          className="panel-toggle"
+          onClick={() => setRelatedOpen((prev) => !prev)}
+          aria-label={relatedOpen ? 'Hide related videos' : 'Show related videos'}
+        >
+          <span className="panel-handle" />
+          <span className="panel-label">{relatedOpen ? 'Hide list' : 'Up next'}</span>
+        </button>
+        <div className="panel-inner">
+          <div className="related-header">
+            <div>
+              <p className="eyebrow">Related</p>
+              <h3>{video.categoryName}</h3>
+            </div>
+            <span>{relatedVideos.length} videos</span>
+          </div>
+          <div className="related-list" ref={virtualListRef}>
+            {relatedVideos.map((item) => (
+              <button
+                key={item.id}
+                className={`related-card ${item.id === video.id ? 'active' : ''}`}
+                onClick={() => handleRelatedSelect(item)}
+                disabled={item.id === video.id}
+              >
+                <img src={item.thumbnailUrl} alt="" className="related-thumb" />
+                <div>
+                  <p className="related-title">{item.title}</p>
+                  <p className="related-meta">{item.duration ?? '—:—'}</p>
+                </div>
+              </button>
+            ))}
+          </div>
+        </div>
+      </div>
+    )
   }
 
   return (
@@ -694,51 +828,19 @@ export function VideoPlayerOverlay({ video, categories = [], onVideoSelect, onPi
                 <span className="sr-only">Minimize player</span>
               </button>
             )}
-            <button
-              className="icon-button secondary fullscreen"
-              onClick={toggleFullscreen}
-              aria-label={isFullscreen ? 'Exit fullscreen' : 'Enter fullscreen'}
-            >
-              {isFullscreen ? <IconCollapse /> : <IconExpand />}
-              <span className="sr-only">{isFullscreen ? 'Exit fullscreen' : 'Enter fullscreen'}</span>
-            </button>
+            {showFullscreenButton && (
+              <button
+                className="icon-button secondary fullscreen"
+                onClick={toggleFullscreen}
+                aria-label={isFullscreen ? 'Exit fullscreen' : 'Enter fullscreen'}
+              >
+                <IconExpand />
+                <span className="sr-only">{isFullscreen ? 'Exit fullscreen' : 'Enter fullscreen'}</span>
+              </button>
+            )}
           </div>
         </div>
-          <div className={`related-panel ${relatedOpen ? 'open' : ''}`}>
-            <button
-              className="panel-toggle"
-              onClick={() => setRelatedOpen((prev) => !prev)}
-              aria-label={relatedOpen ? 'Hide related videos' : 'Show related videos'}
-            >
-              <span className="panel-handle" />
-              <span className="panel-label">{relatedOpen ? 'Hide list' : 'Up next'}</span>
-            </button>
-            <div className="panel-inner">
-              <div className="related-header">
-                <div>
-                  <p className="eyebrow">Related</p>
-                  <h3>{video.categoryName}</h3>
-                </div>
-                <span>{relatedVideos.length} videos</span>
-              </div>
-              <div className="related-list">
-                {relatedVideos.map((item) => (
-                  <button
-                    key={item.id}
-                    className={`related-card ${item.id === video.id ? 'active' : ''}`}
-                    onClick={() => handleRelatedSelect(item)}
-                    disabled={item.id === video.id}
-                  >
-                    <img src={item.thumbnailUrl} alt="" className="related-thumb" />
-                    <div>
-                      <p className="related-title">{item.title}</p>
-                      <p className="related-meta">{item.duration ?? '—:—'}</p>
-                    </div>
-                  </button>
-                ))}
-              </div>
-            </div>
-          </div>
+          {!isCompactViewport && renderRelatedPanel('desktop')}
           {pipMode && (
             <div className="pip-toolbar">
               <div className="pip-title" title={video.title}>
@@ -780,6 +882,7 @@ export function VideoPlayerOverlay({ video, categories = [], onVideoSelect, onPi
             </div>
           )}
         </div>
+        {isCompactViewport && !pipMode && renderRelatedPanel('mobile')}
         <div className="player-meta">
           <span className="category-chip">{video.categoryName}</span>
           <h2>{video.title}</h2>

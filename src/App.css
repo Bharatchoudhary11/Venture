@@ -227,6 +227,11 @@ html {
   pointer-events: auto;
 }
 
+.overlay-shell.mobile-stacked {
+  align-items: flex-start;
+  justify-content: stretch;
+}
+
 .overlay-shell.pip-floating {
   pointer-events: none;
 }
@@ -250,6 +255,28 @@ html {
   animation: rise 320ms ease forwards;
 }
 
+.player-overlay.mobile-layout {
+  width: 100%;
+  max-width: none;
+  padding: 0;
+  border-radius: 0;
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+
+.player-overlay.fullscreen-active {
+  background: #000;
+  padding: 0;
+  border-radius: 0;
+}
+
+.player-overlay.fullscreen-active .player-frame {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+
 .player-frame {
   position: relative;
   transition: transform 260ms cubic-bezier(0.2, 0.8, 0.2, 1);
@@ -268,6 +295,12 @@ html {
   pointer-events: none;
 }
 
+.player-overlay.mobile-layout .player-frame {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+}
+
 .player-overlay.pip-mode .player-frame {
   width: min(360px, 90vw);
   padding: 0.75rem;
@@ -284,6 +317,18 @@ html {
 .player-overlay.pip-mode .related-panel,
 .player-overlay.pip-mode .panel-toggle {
   display: none;
+}
+
+.player-overlay.fullscreen-active .player-meta,
+.player-overlay.fullscreen-active .related-panel,
+.player-overlay.fullscreen-active .panel-toggle,
+.player-overlay.fullscreen-active .pip-toolbar {
+  display: none;
+}
+
+.player-overlay.fullscreen-active .overlay-close {
+  top: 0.75rem;
+  right: 0.75rem;
 }
 
 .player-overlay.pip-mode .player-controls .icon-button {
@@ -363,6 +408,30 @@ html {
   margin-bottom: 1rem;
 }
 
+.player-overlay.mobile-layout .iframe-shell {
+  border-radius: 0;
+  margin-bottom: 0;
+}
+
+.player-overlay.mobile-layout .iframe-shell video,
+.player-overlay.mobile-layout .iframe-shell .yt-container,
+.player-overlay.mobile-layout .iframe-shell iframe {
+  border-radius: 0;
+}
+
+.player-overlay.fullscreen-active .iframe-shell {
+  padding-top: 0;
+  height: 100%;
+  flex: 1;
+}
+
+.player-overlay.fullscreen-active .yt-container,
+.player-overlay.fullscreen-active .iframe-shell iframe,
+.player-overlay.fullscreen-active .iframe-shell video {
+  object-fit: cover;
+  background: #000;
+}
+
 .yt-container,
 .iframe-shell iframe,
 .iframe-shell video {
@@ -431,12 +500,30 @@ html {
   transform: translateY(calc(100% - 32px));
   transition: transform 260ms ease;
   z-index: 3;
-  pointer-events: none;
+  pointer-events: auto;
+}
+
+.related-panel.mobile-inline {
+  position: static;
+  transform: none;
+  pointer-events: auto;
 }
 
 .related-panel.open {
   transform: translateY(0);
   pointer-events: auto;
+}
+
+.player-overlay.mobile-layout .related-panel {
+  position: static;
+  transform: none;
+  pointer-events: auto;
+  border-top: 1px solid rgba(148, 163, 184, 0.2);
+}
+
+.player-overlay.mobile-layout .related-panel:not(.open) .panel-inner,
+.related-panel:not(.open) .panel-inner {
+  display: none;
 }
 
 .panel-toggle {
@@ -454,6 +541,16 @@ html {
   margin: 0  auto;
   border-radius: 999px;
   pointer-events: auto;
+}
+
+.player-overlay.mobile-layout .panel-toggle {
+  width: 100%;
+  border-radius: 0;
+  margin: 0;
+  flex-direction: row;
+  justify-content: space-between;
+  padding: 0.75rem 1rem;
+  background: rgba(2, 6, 23, 0.9);
 }
 
 .panel-handle {
@@ -481,6 +578,11 @@ html {
   display: flex;
   flex-direction: column;
   gap: 0.75rem;
+}
+
+.player-overlay.mobile-layout .panel-inner {
+  border-radius: 0;
+  max-height: none;
 }
 
 .related-header {
@@ -597,6 +699,12 @@ html {
   display: flex;
   flex-direction: column;
   gap: 0.3rem;
+}
+
+.player-overlay.mobile-layout .player-meta {
+  padding: 1rem 1.25rem 2rem;
+  background: rgba(2, 6, 23, 0.9);
+  border-top: 1px solid rgba(148, 163, 184, 0.2);
 }
 
 .player-progress {

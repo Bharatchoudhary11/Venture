@@ -13,10 +13,12 @@ A React + Vite application that recreates a YouTube-style mobile experience with
 - Autoplay when opened, with custom controls (play/pause, ±10s skip, seek bar, current/total time)
 - Supports YouTube embeds, plain MP4 URLs, and HLS `.m3u8` streams (via `hls.js`)
 - Animated transition from feed to player + keyboard shortcuts (space, arrows, M, F)
+- Responsive fullscreen flow: phones auto-rotate to landscape on fullscreen, tablets/desktops respect native APIs, and the player resumes exactly where it left off when collapsing/expanding.
 
 ### In-Player Related List
 - Swipe/scroll overlay listing only videos from the active category
 - Selecting a video switches playback instantly, updates the list, and maintains scroll position
+- Auto-opens on phones for quick context, stays collapsed by default on tablets/desktops until “Up next” is tapped
 - Virtualization scaffold to handle large datasets smoothly
 
 ### Drag-to-Minimize (In-App PiP)
@@ -47,6 +49,9 @@ npm run preview
 
 ### HTTPS tip
 YouTube embeds require matching origins for some commands. For the smoothest PiP/minimize experience in Safari/Brave, run the dev server over HTTPS, e.g. `npm run dev -- --https` (or proxy via a local SSL tool) so `postMessage` isn’t blocked.
+
+### Dataset
+All sample content lives in `src/data/videos.js`. Each entry must provide `title`, `mediaUrl`, `thumbnailUrl`, `duration`, `slug`, and category metadata. Replace this file with your own catalog to retheme the experience—no other code changes are required unless you introduce new media providers.
 
 ## Folder Structure
 
